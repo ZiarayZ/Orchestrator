@@ -37,6 +37,7 @@ func users(url string, w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-WP-Nonce", "wp_rest")
 	//send request and receive response
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
