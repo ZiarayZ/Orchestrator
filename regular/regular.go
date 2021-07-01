@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,20 +10,29 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
 )
 
+//global port
 var port string
 
 type Orchestrator struct {
 	URL      string
-	Platform string
-	Check    []string
+	Platform string //ignored
+	Type     []string
 }
 
-func orch_handle(w http.ResponseWriter, r *http.Request) {
+func regular_handle(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Correlation-ID") != "" {
+		if r.Header.Get("Content-Type") != "application/json" {
+			msg := "Content type should be application/json, not: " + r.Header.Get("Content-Type")
+			http.Error(w, msg, http.StatusBadRequest)
+		}
+	} else {
+		msg := "No correlation ID set"
+		http.Error(w, msg, http.StatusBadRequest)
+	}
 	logger := r.Context().Value("RequestLogger").(*logrus.Entry)
 
 	//enforce limits
@@ -36,7 +44,6 @@ func orch_handle(w http.ResponseWriter, r *http.Request) {
 
 	err := dec.Decode(&orch)
 	if err != nil {
-		logger.Infof("Request Failed. " + err.Error())
 		var syntaxError *json.SyntaxError
 		var unmarshalTypeError *json.UnmarshalTypeError
 
@@ -78,72 +85,16 @@ func orch_handle(w http.ResponseWriter, r *http.Request) {
 	// Catch if there's multiple JSON objects
 	err = dec.Decode(&struct{}{})
 	if err != io.EOF {
-		logger.Infof("Request Failed. EOF err")
 		msg := "Request body must only contain a single JSON object"
 		http.Error(w, msg, http.StatusBadRequest)
 		return
 	}
 
-	//log the information sent
-	logger.Infof("%v", orch)
-
-	//make request to wordpress/regular component
-	if orch.Platform == "wordpress" || orch.Platform == "regular" {
-		newBody, err := json.Marshal(orch)
-		if err != nil {
-			logger.Infof("Orchestrator Encoded: " + err.Error())
-			http.Error(w, err.Error(), http.StatusBadRequest)
-		}
-		newPort := port
-		//edit ports
-		if orch.Platform == "wordpress" {
-			newPort = "4001"
-		} else {
-			newPort = "4002"
-		}
-		req, err := http.NewRequest("POST", "http://localhost:"+newPort+"/"+orch.Platform, bytes.NewBuffer(newBody))
-		if err != nil {
-			logger.Infof("Request Created: " + err.Error())
-			http.Error(w, err.Error(), http.StatusBadRequest)
-		}
-		//cheating and converting to string
-		for k, v := range logger.Data {
-			if k == "correlationID" {
-				corrID := fmt.Sprintf("%v", v.(uuid.UUID))
-				req.Header.Add("Correlation-ID", corrID) //get the uuid
-			}
-		}
-		req.Header.Set("Content-Type", "application/json")
-		//relay auth token if it's for wordpress
-		if orch.Platform == "wordpress" {
-			req.Header.Set("X-WP-Nonce", r.Header.Get("X-WP-Nonce"))
-			req.Header.Set("Cookie", r.Header.Get("Cookie"))
-		}
-		//send request and receive response
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			logger.Infof("Request Sent: " + err.Error())
-			http.Error(w, err.Error(), http.StatusBadRequest)
-		}
-		defer resp.Body.Close()
-		//get string
-		b, err := io.ReadAll(resp.Body)
-		if err != nil {
-			logger.Infof(err.Error())
-			http.Error(w, err.Error(), http.StatusBadRequest)
-		}
-		//return string, either ok or error
-		logger.Infof("Status OK")
-		fmt.Fprintf(w, string(b))
-	} else {
-		logger.Infof("Incorrect Platform.")
-		http.Error(w, "Incorrect platform.", http.StatusBadRequest)
-	}
 }
 
-func CorrelationGeneration(next http.Handler) http.Handler {
+func CorrelationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id := uuid.New()
+		id := r.Header.Get("Correlation-ID")
 		entry := logrus.WithFields(logrus.Fields{
 			"correlationID": id,
 		})
@@ -153,9 +104,10 @@ func CorrelationGeneration(next http.Handler) http.Handler {
 }
 
 func main() {
+	//mux := http.NewServeMux()
 	r := mux.NewRouter()
-	r.Use(CorrelationGeneration)
-	r.HandleFunc("/orch", orch_handle)
+	r.Use(CorrelationMiddleware)
+	r.HandleFunc("/regular", regular_handle)
 
 	port = "4000"
 	err := http.ListenAndServe(":"+port, r)

@@ -1,4 +1,4 @@
-module example.com/wordpress
+module example.com/regular
 
 go 1.16
 

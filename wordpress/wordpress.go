@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,26 +18,35 @@ var port string
 
 type Orchestrator struct {
 	URL      string
-	Platform string //ignored
+	Platform string //ignored but stored
 	Check    []string
 }
 
-//different wordpress checks
-func plugins(url string, w http.ResponseWriter, r *http.Request) {
-
+//structs to store and filter data
+type PluginStatus struct {
+	Name   string
+	Status string
 }
-func users(url string, w http.ResponseWriter, r *http.Request) {
+type UserStatus struct {
+	Name string
+	Link string
+}
+type ConfigStatus struct {
+	Title               string
+	URL                 string
+	Email               string
+	Default_ping_status string
+}
+
+func grabData(url string, w http.ResponseWriter, r *http.Request) []byte {
 	logger := r.Context().Value("RequestLogger").(*logrus.Entry)
-	newUrl := "https://" + url + "/wp-json/wp/v2/users"
-	jsonStr := []byte(`{"orderby":"name"}`)
-	req, err := http.NewRequest("GET", newUrl, bytes.NewBuffer(jsonStr))
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		logger.Infof(err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-WP-Nonce", "wp_rest")
-	//send request and receive response
+	req.Header.Set("X-WP-Nonce", r.Header.Get("X-WP-Nonce"))
+	req.Header.Set("Cookie", r.Header.Get("Cookie"))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		logger.Infof(err.Error())
@@ -52,11 +60,7 @@ func users(url string, w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 	//return string, either ok or error
-	logger.Infof(string(b))
-	fmt.Fprintf(w, string(b))
-}
-func config(url string, w http.ResponseWriter, r *http.Request) {
-
+	return b
 }
 
 func wordpress_handle(w http.ResponseWriter, r *http.Request) {
@@ -118,6 +122,9 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	//log information received
+	logger.Infof("%v", orch)
+
 	// Catch if there's multiple JSON objects
 	err = dec.Decode(&struct{}{})
 	if err != io.EOF {
@@ -126,16 +133,49 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	//config = "https://"+orch.URL+"/wp-json/wp/v2/settings"
+	//plugins = "https://"+orch.URL+"/wp-json/wp/v2/plugins"
+	//users = "https://"+orch.URL+"/wp-json/wp/v2/users"
 	for _, v := range orch.Check {
-		if v == "plugin" {
-			plugins(orch.URL, w, r)
+		if v == "plugins" {
+			toPlug := make([]PluginStatus, 0)
+			data := grabData("https://"+orch.URL+"/wp-json/wp/v2/plugins", w, r)
+			err := json.Unmarshal(data, &toPlug)
+			if err != nil {
+				logger.Infof("Encode Plugins Error: " + err.Error())
+				http.Error(w, err.Error(), http.StatusBadRequest)
+			}
+			filtered, err := json.Marshal(toPlug)
+			w.Header().Set("Content-Type", "application/json")
+			if err != nil {
+				logger.Infof("Decode Plugins Error: " + err.Error())
+				http.Error(w, err.Error(), http.StatusBadRequest)
+			}
+			w.Write(filtered)
 		} else if v == "config" {
-			config(orch.URL, w, r)
-		} else if v == "user" {
-			users(orch.URL, w, r)
+			data := grabData("https://"+orch.URL+"/wp-json/wp/v2/settings", w, r)
+			w.Write(data)
+		} else if v == "users" {
+			toPlug := make([]UserStatus, 0)
+			data := grabData("https://"+orch.URL+"/wp-json/wp/v2/users", w, r)
+			err := json.Unmarshal(data, &toPlug)
+			if err != nil {
+				logger.Infof("Encode Users Error: " + err.Error())
+				http.Error(w, err.Error(), http.StatusBadRequest)
+			}
+			filtered, err := json.Marshal(toPlug)
+			w.Header().Set("Content-Type", "application/json")
+			if err != nil {
+				logger.Infof("Decode Users Error: " + err.Error())
+				http.Error(w, err.Error(), http.StatusBadRequest)
+			}
+			w.Write(filtered)
+		} else {
+			logger.Infof("Incorrect Check: \"" + v + "\"")
+			fmt.Fprintf(w, "Incorrect Check: \""+v+"\"")
 		}
 	}
-
+	logger.Infof("Status OK")
 }
 
 func CorrelationMiddleware(next http.Handler) http.Handler {
@@ -155,7 +195,7 @@ func main() {
 	r.Use(CorrelationMiddleware)
 	r.HandleFunc("/wordpress", wordpress_handle)
 
-	port = "4000"
+	port = "4001"
 	err := http.ListenAndServe(":"+port, r)
 	log.Fatal(err)
 }
