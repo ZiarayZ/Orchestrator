@@ -109,7 +109,7 @@ func main() {
 	r.Use(CorrelationMiddleware)
 	r.HandleFunc("/regular", regular_handle)
 
-	port = "4000"
+	port = "4002"
 	err := http.ListenAndServe(":"+port, r)
 	log.Fatal(err)
 }

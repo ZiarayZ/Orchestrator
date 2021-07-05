@@ -98,8 +98,11 @@ func orch_handle(w http.ResponseWriter, r *http.Request) {
 		//edit ports
 		if orch.Platform == "wordpress" {
 			newPort = "4001"
-		} else {
+		} else if orch.Platform == "regular" {
 			newPort = "4002"
+		} else {
+			logger.Infof("Requested Site Type Error: " + orch.Platform)
+			http.Error(w, "Requested Site Type Error: "+orch.Platform, http.StatusBadRequest)
 		}
 		req, err := http.NewRequest("POST", "http://localhost:"+newPort+"/"+orch.Platform, bytes.NewBuffer(newBody))
 		if err != nil {
