@@ -2,7 +2,7 @@
 
 Setup a script that will handle requests sent to it, attaching a correlation ID to them.
 It will then send the request to either Wordpress script or Regular script.
-It will then respond with whatever response it receives. <br />
+It will then respond with whatever response it receives from them. <br />
 
 # Wordpress
 
