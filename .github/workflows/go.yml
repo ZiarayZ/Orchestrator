@@ -19,7 +19,13 @@ jobs:
         go-version: 1.16
 
     - name: Build
-      run: go build -v ./...
+      run: |
+        go build -v ./orch/orch.go
+        go build -v ./regular/regular.go
+        go build -v ./wordpress/wordpress.go
 
     - name: Test
-      run: go test -v ./...
+      run: |
+        go test -v ./orch/orch.go
+        go test -v ./regular/regular.go
+        go test -v ./wordpress/wordpress.go
