@@ -19,6 +19,7 @@ import (
 var wordpressPort string
 var regularPort string
 var password string
+var insidePassword string
 
 type Orchestrator struct {
 	URL      string
@@ -123,6 +124,7 @@ func orch_handle(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Orch-Token", insidePassword)
 			//relay auth token if it's for wordpress
 			if orch.Platform == "wordpress" {
 				req.Header.Set("X-WP-Nonce", r.Header.Get("X-WP-Nonce"))
@@ -179,6 +181,7 @@ func main() {
 	regularPort = "4002"
 	// replace "uuid.New().String()"" with your own token string if wanted/needed
 	password = uuid.New().String()
+	insidePassword = "4fac636a-33f0-4f4a-9a19-c3ed5dddf75b"
 	fmt.Print(password)
 	err := http.ListenAndServe(":"+port, r)
 	log.Fatal(err)
