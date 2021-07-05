@@ -1,3 +1,15 @@
+# Orchestrator
+
+## v1.0<br />
+Setup a script that will handle requests sent to it, attaching a correlation ID to them.
+It will then send the request to either Wordpress script or Regular script.
+It will then respond with whatever response it receives from them. <br />
+## v1.1<br />
+Fix error responses failing. <br />
+Removed errors sent to client. <br />
+Added authorization token header that is required for every request. <br />
+Also added this authorization token header for between Orchestrator and Wordpress/Regular. <br />
+
 # Wordpress
 
 ## v1.0<br />
