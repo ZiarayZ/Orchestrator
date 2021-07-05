@@ -38,31 +38,6 @@ type ConfigStatus struct {
 	Default_ping_status string
 }
 
-func grabData(url string, w http.ResponseWriter, r *http.Request) []byte {
-	logger := r.Context().Value("RequestLogger").(*logrus.Entry)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		logger.Infof(err.Error())
-		http.Error(w, err.Error(), http.StatusBadRequest)
-	}
-	req.Header.Set("X-WP-Nonce", r.Header.Get("X-WP-Nonce"))
-	req.Header.Set("Cookie", r.Header.Get("Cookie"))
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		logger.Infof(err.Error())
-		http.Error(w, err.Error(), http.StatusBadRequest)
-	}
-	defer resp.Body.Close()
-	//get string
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		logger.Infof(err.Error())
-		http.Error(w, err.Error(), http.StatusBadRequest)
-	}
-	//return string, either ok or error
-	return b
-}
-
 func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Correlation-ID") != "" {
 		if r.Header.Get("Content-Type") != "application/json" {
@@ -137,39 +112,127 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 	//plugins = "https://"+orch.URL+"/wp-json/wp/v2/plugins"
 	//users = "https://"+orch.URL+"/wp-json/wp/v2/users"
 	for _, v := range orch.Check {
+
+		//plugins check
 		if v == "plugins" {
 			toPlug := make([]PluginStatus, 0)
-			data := grabData("https://"+orch.URL+"/wp-json/wp/v2/plugins", w, r)
-			err := json.Unmarshal(data, &toPlug)
+			req, err := http.NewRequest("GET", "https://"+orch.URL+"/wp-json/wp/v2/plugins", nil)
 			if err != nil {
+				logger.Infof("Request Creation: " + err.Error())
+				http.Error(w, "Request Creation Failed.", http.StatusBadRequest)
+				return
+			}
+			req.Header.Set("X-WP-Nonce", r.Header.Get("X-WP-Nonce"))
+			req.Header.Set("Cookie", r.Header.Get("Cookie"))
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				logger.Infof("Request Sent: " + err.Error())
+				http.Error(w, "Request Sent Failed.", http.StatusBadRequest)
+				return
+			}
+			defer resp.Body.Close()
+			//get string
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				logger.Infof("Response Received: " + err.Error())
+				http.Error(w, "Response Received Failed.", http.StatusBadRequest)
+				return
+			}
+			if json.Unmarshal(b, &toPlug) != nil {
 				logger.Infof("Encode Plugins Error: " + err.Error())
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				http.Error(w, "Encode Plugins Error.", http.StatusBadRequest)
+				return
 			}
 			filtered, err := json.Marshal(toPlug)
 			w.Header().Set("Content-Type", "application/json")
 			if err != nil {
 				logger.Infof("Decode Plugins Error: " + err.Error())
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				http.Error(w, "Decode Plugins Error.", http.StatusBadRequest)
+				return
 			}
 			w.Write(filtered)
+
+			//config or site settings check
 		} else if v == "config" {
-			data := grabData("https://"+orch.URL+"/wp-json/wp/v2/settings", w, r)
-			w.Write(data)
+			req, err := http.NewRequest("GET", "https://"+orch.URL+"/wp-json/wp/v2/settings", nil)
+			if err != nil {
+				logger.Infof("Request Creation: " + err.Error())
+				http.Error(w, "Request Creation Failed.", http.StatusBadRequest)
+				return
+			}
+			req.Header.Set("X-WP-Nonce", r.Header.Get("X-WP-Nonce"))
+			req.Header.Set("Cookie", r.Header.Get("Cookie"))
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				logger.Infof("Request Sent: " + err.Error())
+				http.Error(w, "Request Sent Failed.", http.StatusBadRequest)
+				return
+			}
+			defer resp.Body.Close()
+			//get string
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				logger.Infof("Response Received: " + err.Error())
+				http.Error(w, "Response Received Failed.", http.StatusBadRequest)
+				return
+			}
+			w.Write(b)
+
+			//users check
 		} else if v == "users" {
 			toPlug := make([]UserStatus, 0)
-			data := grabData("https://"+orch.URL+"/wp-json/wp/v2/users", w, r)
-			err := json.Unmarshal(data, &toPlug)
+			req, err := http.NewRequest("GET", "https://"+orch.URL+"/wp-json/wp/v2/users", nil)
 			if err != nil {
+				logger.Infof("Request Creation: " + err.Error())
+				http.Error(w, "Request Creation Failed.", http.StatusBadRequest)
+				return
+			}
+			req.Header.Set("X-WP-Nonce", r.Header.Get("X-WP-Nonce"))
+			req.Header.Set("Cookie", r.Header.Get("Cookie"))
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				logger.Infof("Request Sent: " + err.Error())
+				http.Error(w, "Request Sent Failed.", http.StatusBadRequest)
+				return
+			}
+			defer resp.Body.Close()
+			//get string
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				logger.Infof("Response Received: " + err.Error())
+				http.Error(w, "Response Received Failed.", http.StatusBadRequest)
+				return
+			}
+			if json.Unmarshal(b, &toPlug) != nil {
 				logger.Infof("Encode Users Error: " + err.Error())
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				http.Error(w, "Encode Users Error.", http.StatusBadRequest)
+				return
 			}
 			filtered, err := json.Marshal(toPlug)
 			w.Header().Set("Content-Type", "application/json")
 			if err != nil {
 				logger.Infof("Decode Users Error: " + err.Error())
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				http.Error(w, "Decode Users Error.", http.StatusBadRequest)
+				return
 			}
 			w.Write(filtered)
+
+			//basic check
+		} else if v == "basic" {
+			resp, err := http.Get("https://" + orch.URL)
+			if err != nil {
+				logger.Infof("Basic Request Error: " + err.Error())
+				http.Error(w, "Basic Request Error.", http.StatusBadRequest)
+				return
+			} else if resp.StatusCode == 200 {
+				http.Error(w, orch.URL+": OK", http.StatusOK)
+				return
+			} else {
+				http.Error(w, "Status Code Not OK", resp.StatusCode)
+				return
+			}
+
+			//invalid check
 		} else {
 			logger.Infof("Incorrect Check: \"" + v + "\"")
 			fmt.Fprintf(w, "Incorrect Check: \""+v+"\"")
@@ -178,6 +241,7 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 	logger.Infof("Status OK")
 }
 
+//grab the correlation ID and attach it to the logger
 func CorrelationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get("Correlation-ID")

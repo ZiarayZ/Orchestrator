@@ -20,7 +20,7 @@ var port string
 type Orchestrator struct {
 	URL      string
 	Platform string //ignored
-	Type     []string
+	Check    []string
 }
 
 func regular_handle(w http.ResponseWriter, r *http.Request) {
@@ -28,10 +28,12 @@ func regular_handle(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Content-Type") != "application/json" {
 			msg := "Content type should be application/json, not: " + r.Header.Get("Content-Type")
 			http.Error(w, msg, http.StatusBadRequest)
+			return
 		}
 	} else {
 		msg := "No correlation ID set"
 		http.Error(w, msg, http.StatusBadRequest)
+		return
 	}
 	logger := r.Context().Value("RequestLogger").(*logrus.Entry)
 
@@ -90,8 +92,17 @@ func regular_handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resp, err := http.Get("https://" + orch.URL)
+	if resp.StatusCode == 200 {
+		http.Error(w, orch.URL+": OK", http.StatusOK)
+		return
+	} else {
+		http.Error(w, "Status Code Not OK", resp.StatusCode)
+		return
+	}
 }
 
+//grab the correlation ID and attach it to the logger
 func CorrelationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get("Correlation-ID")
