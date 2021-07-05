@@ -10,6 +10,15 @@ Removed errors sent to client. <br />
 Added authorization token header that is required for every request. <br />
 Also added this authorization token header for between Orchestrator and Wordpress/Regular. <br />
 
+# Regular
+
+## v1.0<br />
+Basic http setup has been done for this one, but requesting sites has not been added yet. <br />
+## v1.1<br />
+Fix error responses failing. <br />
+Removed errors sent to client. <br />
+Requesting sites has been added now. Only sends a basic check for Status OK. <br />
+
 # Wordpress
 
 ## v1.0<br />
@@ -19,15 +28,6 @@ It will filter the response it receives before sending it back to Orchestrator. 
 Fix error responses failing. <br />
 Removed errors sent to client. <br />
 Added a basic check which will send a get request and respond with a Status OK or a specific Error Status. <br />
-
-# Regular
-
-## v1.0<br />
-Basic http setup has been done for this one, but requesting sites has not been added yet. <br />
-## v1.1<br />
-Fix error responses failing. <br />
-Removed errors sent to client. <br />
-Requesting sites has been added now. Only sends a basic check for Status OK. <br />
 
 # Instructions
 
@@ -42,6 +42,7 @@ Send a single JSON object with: <br />
   "check": ["type of check done, 'basic', 'users', 'plugins' and 'config'"]
 }
 ```
+<br /><br />
 
 A 'basic' check is done by 'regular' or 'wordpress' websites whilst the other three ('users', 'plugins' and 'config') are restricted to solely 'wordpress' websites. <br /><br />
 Here is an example of a 'wordpress' request's JSON:<br />
