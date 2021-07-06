@@ -23,7 +23,8 @@ Requesting sites has been added now. Only sends a basic check for Status OK. <br
 
 ## v1.0<br />
 This script will handle requests from the Orchestrator and will query wordpress sites for a specific check, i.e. plugins, users or site settings.
-It will filter the response it receives before sending it back to Orchestrator. <br />
+It will filter the response it receives before sending it back to Orchestrator.
+This will require 2 headers in the request, X-WP-Nonce and Cookie, the nonce is an authorization token whilst the cookie is the login cookie. <br />
 ## v1.1<br />
 Fix error responses failing. <br />
 Removed errors sent to client. <br />
