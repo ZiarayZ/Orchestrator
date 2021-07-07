@@ -29,6 +29,7 @@ type Orchestrator struct {
 
 func orch_handle(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Orch-Token") == password {
+		//create logger
 		logger := r.Context().Value("RequestLogger").(*logrus.Entry)
 
 		//enforce limits
@@ -36,6 +37,7 @@ func orch_handle(w http.ResponseWriter, r *http.Request) {
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
 
+		//decoder struct
 		var orch Orchestrator
 
 		err := dec.Decode(&orch)
@@ -94,6 +96,7 @@ func orch_handle(w http.ResponseWriter, r *http.Request) {
 		//make request to wordpress/regular component
 		if orch.Platform == "wordpress" || orch.Platform == "regular" {
 			newBody, err := json.Marshal(orch)
+			//return/log error
 			if err != nil {
 				logger.Infof("Encode JSON: " + err.Error())
 				http.Error(w, "Encode JSOn Failed.", http.StatusBadRequest)
@@ -105,12 +108,14 @@ func orch_handle(w http.ResponseWriter, r *http.Request) {
 				newPort = "4001"
 			} else if orch.Platform == "regular" {
 				newPort = "4002"
+				//return/log error
 			} else {
 				logger.Infof("Requested Site Type Error: " + orch.Platform)
 				http.Error(w, "Requested Site Type Error: "+orch.Platform, http.StatusBadRequest)
 				return
 			}
 			req, err := http.NewRequest("POST", "http://localhost:"+newPort+"/"+orch.Platform, bytes.NewBuffer(newBody))
+			//return/log error
 			if err != nil {
 				logger.Infof("Request Creation: " + err.Error())
 				http.Error(w, "Request Creation Failed.", http.StatusBadRequest)
@@ -132,6 +137,7 @@ func orch_handle(w http.ResponseWriter, r *http.Request) {
 			}
 			//send request and receive response
 			resp, err := http.DefaultClient.Do(req)
+			//return/log error
 			if err != nil {
 				logger.Infof("Request Sent: " + err.Error())
 				http.Error(w, "Request Sent Failed.", http.StatusBadRequest)
@@ -140,6 +146,7 @@ func orch_handle(w http.ResponseWriter, r *http.Request) {
 			defer resp.Body.Close()
 			//get string
 			b, err := io.ReadAll(resp.Body)
+			//return/log error
 			if err != nil {
 				logger.Infof("Read Response: " + err.Error())
 				http.Error(w, "Read Response Failed.", http.StatusBadRequest)
@@ -148,11 +155,13 @@ func orch_handle(w http.ResponseWriter, r *http.Request) {
 			//return string, either ok or error
 			logger.Infof("Status OK")
 			fmt.Fprintf(w, string(b))
+			//return/log error
 		} else {
 			logger.Infof("Incorrect Platform.")
 			http.Error(w, "Incorrect platform.", http.StatusBadRequest)
 			return
 		}
+		//return/log error
 	} else {
 		http.Error(w, "Invalid Request Token.", http.StatusBadRequest)
 		return
@@ -162,7 +171,9 @@ func orch_handle(w http.ResponseWriter, r *http.Request) {
 //create the correlation ID and attach it to the logger
 func CorrelationGeneration(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		//generate uuid
 		id := uuid.New()
+		//attach uuid via logger
 		entry := logrus.WithFields(logrus.Fields{
 			"correlationID": id,
 		})
@@ -172,17 +183,19 @@ func CorrelationGeneration(next http.Handler) http.Handler {
 }
 
 func main() {
+	//create endpoint
 	r := mux.NewRouter()
 	r.Use(CorrelationGeneration)
 	r.HandleFunc("/orch", orch_handle)
 
+	//define ports, change at will
 	port := "4000"
 	wordpressPort = "4001"
 	regularPort = "4002"
 	// replace "uuid.New().String()"" with your own token string if wanted/needed
 	password = uuid.New().String()
 	insidePassword = "4fac636a-33f0-4f4a-9a19-c3ed5dddf75b"
-	fmt.Print(password)
+	fmt.Print(password) //display randomly generated "Orch-Token"
 	err := http.ListenAndServe(":"+port, r)
 	log.Fatal(err)
 }
