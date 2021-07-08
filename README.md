@@ -46,7 +46,7 @@ Fixed bugs. <br />
 # Instructions
 
 ## v2.0 <br />
-Send POST requests with /orch. i.e. example.com/orch <br />
+Send POST requests with endpoint /orch. i.e. example.com/orch <br />
 Send a single JSON object with: <br />
 
 ```JSON
