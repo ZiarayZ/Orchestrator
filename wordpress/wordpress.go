@@ -9,13 +9,31 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
+	"gopkg.in/mgo.v2"
 )
 
 var port string
-var password string
+var orch_token string
+
+//mongoDB constants, change them for your own DB
+const (
+	hosts      = "localhost:27017" //IP
+	database   = "logs"            //DB (schema)
+	username   = ""                //login details
+	password   = ""                //login details
+	collection = "wordpress"       //Collection (table)
+)
+
+type Log struct {
+	Date        interface{}
+	URL         string
+	Status_code int
+	Check       string
+}
 
 type Orchestrator struct {
 	URL      string
@@ -39,8 +57,14 @@ type ConfigStatus struct {
 	Default_ping_status string
 }
 
+type MongoStore struct {
+	session *mgo.Session
+}
+
+var mongoStore = MongoStore{}
+
 func wordpress_handle(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Orch-Token") == password {
+	if r.Header.Get("Orch-Token") == orch_token {
 		if r.Header.Get("Correlation-ID") != "" {
 			if r.Header.Get("Content-Type") != "application/json" {
 				msg := "Content type should be application/json, not: " + r.Header.Get("Content-Type")
@@ -51,6 +75,8 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, msg, http.StatusBadRequest)
 		}
 		logger := r.Context().Value("RequestLogger").(*logrus.Entry)
+		col := mongoStore.session.DB(database).C(collection)
+		var toLog Log
 
 		//enforce limits
 		r.Body = http.MaxBytesReader(w, r.Body, 1048576)
@@ -113,20 +139,36 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 		//config = "https://"+orch.URL+"/wp-json/wp/v2/settings"
 		//plugins = "https://"+orch.URL+"/wp-json/wp/v2/plugins"
 		//users = "https://"+orch.URL+"/wp-json/wp/v2/users"
+		toLog.URL = orch.URL
 		for _, v := range orch.Check {
 
 			//plugins check
 			if v == "plugins" {
+				//struct to translate into
 				toPlug := make([]PluginStatus, 0)
+				//generate request
 				req, err := http.NewRequest("GET", "https://"+orch.URL+"/wp-json/wp/v2/plugins", nil)
+				//report error
 				if err != nil {
 					logger.Infof("Request Creation: " + err.Error())
 					http.Error(w, "Request Creation Failed.", http.StatusBadRequest)
 					return
 				}
+				//add headers to request
 				req.Header.Set("X-WP-Nonce", r.Header.Get("X-WP-Nonce"))
 				req.Header.Set("Cookie", r.Header.Get("Cookie"))
 				resp, err := http.DefaultClient.Do(req)
+				//log the result to DB
+				toLog.Status_code = resp.StatusCode
+				toLog.Check = "plugins"
+				toLog.Date = time.Now()
+				newErr := col.Insert(toLog)
+				if newErr != nil {
+					logger.Infof("Logging Failed: " + newErr.Error())
+					http.Error(w, "Logging Failed.", http.StatusBadRequest)
+					return
+				}
+				//send request and report error
 				if err != nil {
 					logger.Infof("Request Sent: " + err.Error())
 					http.Error(w, "Request Sent Failed.", http.StatusBadRequest)
@@ -135,36 +177,56 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 				defer resp.Body.Close()
 				//get string
 				b, err := io.ReadAll(resp.Body)
+				//report error
 				if err != nil {
 					logger.Infof("Response Received: " + err.Error())
 					http.Error(w, "Response Received Failed.", http.StatusBadRequest)
 					return
 				}
+				//translate into struct and report error
+				//an error will be thrown when the nonce or cookie is out of date or incorrect
 				if json.Unmarshal(b, &toPlug) != nil {
 					logger.Infof("Encode Plugins Error: " + err.Error())
 					http.Error(w, "Encode Plugins Error.", http.StatusBadRequest)
 					return
 				}
+				//filter useless info out using struct
 				filtered, err := json.Marshal(toPlug)
-				w.Header().Set("Content-Type", "application/json")
+				//report error
 				if err != nil {
 					logger.Infof("Decode Plugins Error: " + err.Error())
 					http.Error(w, "Decode Plugins Error.", http.StatusBadRequest)
 					return
 				}
+				w.Header().Set("Content-Type", "application/json")
+				//log it and respond
 				w.Write(filtered)
 
 				//config or site settings check
 			} else if v == "config" {
+				//generate request
 				req, err := http.NewRequest("GET", "https://"+orch.URL+"/wp-json/wp/v2/settings", nil)
+				//report error
 				if err != nil {
 					logger.Infof("Request Creation: " + err.Error())
 					http.Error(w, "Request Creation Failed.", http.StatusBadRequest)
 					return
 				}
+				//add headers
 				req.Header.Set("X-WP-Nonce", r.Header.Get("X-WP-Nonce"))
 				req.Header.Set("Cookie", r.Header.Get("Cookie"))
+				//send request and report error
 				resp, err := http.DefaultClient.Do(req)
+				//log the result to DB
+				toLog.Status_code = resp.StatusCode
+				toLog.Check = "config"
+				toLog.Date = time.Now()
+				newErr := col.Insert(toLog)
+				if newErr != nil {
+					logger.Infof("Logging Failed: " + newErr.Error())
+					http.Error(w, "Logging Failed.", http.StatusBadRequest)
+					return
+				}
 				if err != nil {
 					logger.Infof("Request Sent: " + err.Error())
 					http.Error(w, "Request Sent Failed.", http.StatusBadRequest)
@@ -173,25 +235,42 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 				defer resp.Body.Close()
 				//get string
 				b, err := io.ReadAll(resp.Body)
+				//report error
 				if err != nil {
 					logger.Infof("Response Received: " + err.Error())
 					http.Error(w, "Response Received Failed.", http.StatusBadRequest)
 					return
 				}
+				//log it and respond
 				w.Write(b)
 
 				//users check
 			} else if v == "users" {
+				//struct to translate into
 				toPlug := make([]UserStatus, 0)
+				//generate request
 				req, err := http.NewRequest("GET", "https://"+orch.URL+"/wp-json/wp/v2/users", nil)
+				//report error
 				if err != nil {
 					logger.Infof("Request Creation: " + err.Error())
 					http.Error(w, "Request Creation Failed.", http.StatusBadRequest)
 					return
 				}
+				//add headers
 				req.Header.Set("X-WP-Nonce", r.Header.Get("X-WP-Nonce"))
 				req.Header.Set("Cookie", r.Header.Get("Cookie"))
 				resp, err := http.DefaultClient.Do(req)
+				//log the result to DB
+				toLog.Status_code = resp.StatusCode
+				toLog.Check = "users"
+				toLog.Date = time.Now()
+				newErr := col.Insert(toLog)
+				if newErr != nil {
+					logger.Infof("Logging Failed: " + newErr.Error())
+					http.Error(w, "Logging Failed.", http.StatusBadRequest)
+					return
+				}
+				//send request and report error
 				if err != nil {
 					logger.Infof("Request Sent: " + err.Error())
 					http.Error(w, "Request Sent Failed.", http.StatusBadRequest)
@@ -200,39 +279,30 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 				defer resp.Body.Close()
 				//get string
 				b, err := io.ReadAll(resp.Body)
+				//report error
 				if err != nil {
 					logger.Infof("Response Received: " + err.Error())
 					http.Error(w, "Response Received Failed.", http.StatusBadRequest)
 					return
 				}
+				//translate into struct and report error
+				//an error will be thrown when the nonce or cookie is out of date or incorrect
 				if json.Unmarshal(b, &toPlug) != nil {
 					logger.Infof("Encode Users Error: " + err.Error())
 					http.Error(w, "Encode Users Error.", http.StatusBadRequest)
 					return
 				}
+				//filter useless info out using struct
 				filtered, err := json.Marshal(toPlug)
-				w.Header().Set("Content-Type", "application/json")
+				//report error
 				if err != nil {
 					logger.Infof("Decode Users Error: " + err.Error())
 					http.Error(w, "Decode Users Error.", http.StatusBadRequest)
 					return
 				}
+				w.Header().Set("Content-Type", "application/json")
+				//log it and respond
 				w.Write(filtered)
-
-				//basic check
-			} else if v == "basic" {
-				resp, err := http.Get("https://" + orch.URL)
-				if err != nil {
-					logger.Infof("Basic Request Error: " + err.Error())
-					http.Error(w, "Basic Request Error.", http.StatusBadRequest)
-					return
-				} else if resp.StatusCode == 200 {
-					http.Error(w, orch.URL+": OK", http.StatusOK)
-					return
-				} else {
-					http.Error(w, "Status Code Not OK", resp.StatusCode)
-					return
-				}
 
 				//invalid check
 			} else {
@@ -240,7 +310,34 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 				fmt.Fprintf(w, "Incorrect Check: \""+v+"\"")
 			}
 		}
-		logger.Infof("Status OK")
+
+		//basic check
+		resp, err := http.Get("https://" + orch.URL)
+		//log the result to DB
+		toLog.Status_code = resp.StatusCode
+		toLog.Check = "basic"
+		toLog.Date = time.Now()
+		newErr := col.Insert(toLog)
+		if newErr != nil {
+			logger.Infof("Logging Failed: " + newErr.Error())
+			http.Error(w, "Logging Failed.", http.StatusBadRequest)
+			return
+		}
+		if err != nil {
+			logger.Infof("Basic Request Error: " + err.Error())
+			http.Error(w, "Basic Request Error.", http.StatusBadRequest)
+			return
+		} else if resp.StatusCode == 200 {
+			if err != nil {
+				panic(err)
+			}
+			logger.Infof("Status OK")
+			http.Error(w, orch.URL+": OK", http.StatusOK)
+			return
+		} else {
+			http.Error(w, "Status Code Not OK", resp.StatusCode)
+			return
+		}
 	} else {
 		http.Error(w, "Invalid Request Token.", http.StatusBadRequest)
 	}
@@ -258,14 +355,36 @@ func CorrelationMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+func initialiseMongo() (session *mgo.Session) {
+	info := &mgo.DialInfo{
+		Addrs:    []string{hosts},
+		Timeout:  60 * time.Second,
+		Database: database,
+		Username: username,
+		Password: password,
+	}
+
+	session, err := mgo.DialWithInfo(info)
+	if err != nil {
+		panic(err)
+	}
+
+	return
+}
+
 func main() {
-	//mux := http.NewServeMux()
+	//connect to mongoDB server/container
+	session := initialiseMongo()
+	mongoStore.session = session
+
+	//create connection and/or endpoint
 	r := mux.NewRouter()
 	r.Use(CorrelationMiddleware)
 	r.HandleFunc("/wordpress", wordpress_handle)
 
+	//set global vars and listen on endpoint
 	port = "4001"
-	password = "4fac636a-33f0-4f4a-9a19-c3ed5dddf75b"
+	orch_token = "4fac636a-33f0-4f4a-9a19-c3ed5dddf75b"
 	err := http.ListenAndServe(":"+port, r)
 	log.Fatal(err)
 }

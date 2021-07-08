@@ -9,14 +9,31 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
+	"gopkg.in/mgo.v2"
 )
 
 //global port
 var port string
-var password string
+var orch_token string
+
+//mongoDB constants
+const (
+	hosts      = "localhost:27017" //IP
+	database   = "logs"            //DB (schema)
+	username   = ""                //login details
+	password   = ""                //login details
+	collection = "regular"         //Collection (table)
+)
+
+type Log struct {
+	Date        interface{}
+	URL         string
+	Status_code int
+}
 
 type Orchestrator struct {
 	URL      string
@@ -24,8 +41,14 @@ type Orchestrator struct {
 	Check    []string
 }
 
+type MongoStore struct {
+	session *mgo.Session
+}
+
+var mongoStore = MongoStore{}
+
 func regular_handle(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Orch-Token") == password {
+	if r.Header.Get("Orch-Token") == orch_token {
 		if r.Header.Get("Correlation-ID") != "" {
 			if r.Header.Get("Content-Type") != "application/json" {
 				msg := "Content type should be application/json, not: " + r.Header.Get("Content-Type")
@@ -38,6 +61,8 @@ func regular_handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		logger := r.Context().Value("RequestLogger").(*logrus.Entry)
+		col := mongoStore.session.DB(database).C(collection)
+		var toLog Log
 
 		//enforce limits
 		r.Body = http.MaxBytesReader(w, r.Body, 1048576)
@@ -95,8 +120,17 @@ func regular_handle(w http.ResponseWriter, r *http.Request) {
 		}
 
 		resp, err := http.Get("https://" + orch.URL)
-		if resp.StatusCode == 200 {
-			http.Error(w, orch.URL+": OK", http.StatusOK)
+		if resp.StatusCode >= 200 && resp.StatusCode <= 299 {
+			//log it to DB
+			toLog.URL = orch.URL
+			toLog.Status_code = resp.StatusCode
+			toLog.Date = time.Now()
+			err = col.Insert(toLog)
+			if err != nil {
+				panic(err)
+			}
+			logger.Infof("%v", toLog)
+			http.Error(w, orch.URL+": OK", resp.StatusCode)
 			return
 		} else {
 			http.Error(w, "Status Code Not OK", resp.StatusCode)
@@ -119,14 +153,36 @@ func CorrelationMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+func initialiseMongo() (session *mgo.Session) {
+	info := &mgo.DialInfo{
+		Addrs:    []string{hosts},
+		Timeout:  60 * time.Second,
+		Database: database,
+		Username: username,
+		Password: password,
+	}
+
+	session, err := mgo.DialWithInfo(info)
+	if err != nil {
+		panic(err)
+	}
+
+	return
+}
+
 func main() {
-	//mux := http.NewServeMux()
+	//connect to mongoDB server/container
+	session := initialiseMongo()
+	mongoStore.session = session
+
+	//create connection and/or endpoint
 	r := mux.NewRouter()
 	r.Use(CorrelationMiddleware)
 	r.HandleFunc("/regular", regular_handle)
 
+	//set global vars and listen on endpoint
 	port = "4002"
-	password = "4fac636a-33f0-4f4a-9a19-c3ed5dddf75b"
+	orch_token = "4fac636a-33f0-4f4a-9a19-c3ed5dddf75b"
 	err := http.ListenAndServe(":"+port, r)
 	log.Fatal(err)
 }

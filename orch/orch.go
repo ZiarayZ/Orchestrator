@@ -16,11 +16,13 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+//global vars for header tokens and ports to other scripts
 var wordpressPort string
 var regularPort string
 var password string
 var insidePassword string
 
+//to decode the JSON into
 type Orchestrator struct {
 	URL      string
 	Platform string
@@ -88,6 +90,19 @@ func orch_handle(w http.ResponseWriter, r *http.Request) {
 			msg := "Request body must only contain a single JSON object"
 			http.Error(w, msg, http.StatusBadRequest)
 			return
+		}
+
+		//check and remove "http" or "https" and "www."" from url given
+		runes := []rune(orch.URL)
+		if string(runes[0:7]) == "http://" {
+			orch.URL = string(runes[7:])
+			runes = []rune(orch.URL)
+		} else if string(runes[0:8]) == "https://" {
+			orch.URL = string(runes[8:])
+			runes = []rune(orch.URL)
+		}
+		if string(runes[0:4]) == "www." {
+			orch.URL = string(runes[4:])
 		}
 
 		//log the information sent
