@@ -56,7 +56,7 @@ Send a single JSON object with: <br />
   "check": ["type of check done, i.e. 'users', 'plugins' and 'config'"]
 }
 ```
-<br /><br />
+<br />
 
 A basic check is done by default with 'regular' or 'wordpress' websites whilst the other three ('users', 'plugins' and 'config') are restricted to solely 'wordpress' websites. <br /><br />
 Here is an example of a 'wordpress' request's JSON:<br />
