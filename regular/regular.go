@@ -30,9 +30,10 @@ const (
 )
 
 type Log struct {
-	Date        interface{}
-	URL         string
-	Status_code int
+	Correlation_ID string
+	Date           interface{}
+	URL            string
+	Status_code    int
 }
 
 type Orchestrator struct {
@@ -122,6 +123,7 @@ func regular_handle(w http.ResponseWriter, r *http.Request) {
 		resp, err := http.Get("https://" + orch.URL)
 		if resp.StatusCode >= 200 && resp.StatusCode <= 299 {
 			//log it to DB
+			toLog.Correlation_ID = r.Header.Get("Correlation-ID")
 			toLog.URL = orch.URL
 			toLog.Status_code = resp.StatusCode
 			toLog.Date = time.Now()

@@ -29,10 +29,11 @@ const (
 )
 
 type Log struct {
-	Date        interface{}
-	URL         string
-	Status_code int
-	Check       string
+	Correlation_ID string
+	Date           interface{}
+	URL            string
+	Status_code    int
+	Check          string
 }
 
 type Orchestrator struct {
@@ -140,6 +141,7 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 		//plugins = "https://"+orch.URL+"/wp-json/wp/v2/plugins"
 		//users = "https://"+orch.URL+"/wp-json/wp/v2/users"
 		toLog.URL = orch.URL
+		toLog.Correlation_ID = r.Header.Get("Correlation-ID")
 		for _, v := range orch.Check {
 
 			//plugins check
@@ -185,9 +187,11 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 				}
 				//translate into struct and report error
 				//an error will be thrown when the nonce or cookie is out of date or incorrect
-				if json.Unmarshal(b, &toPlug) != nil {
+				err = json.Unmarshal(b, &toPlug)
+				if err != nil {
 					logger.Infof("Encode Plugins Error: " + err.Error())
-					http.Error(w, "Encode Plugins Error.", http.StatusBadRequest)
+					w.Write(b) //incorrect cookie nonce
+					http.Error(w, "X-WP-Nonce is incorrect or out of date, or Cookie is incorrect or out of date.", http.StatusBadRequest)
 					return
 				}
 				//filter useless info out using struct
@@ -287,9 +291,11 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 				}
 				//translate into struct and report error
 				//an error will be thrown when the nonce or cookie is out of date or incorrect
-				if json.Unmarshal(b, &toPlug) != nil {
+				err = json.Unmarshal(b, &toPlug)
+				if err != nil {
 					logger.Infof("Encode Users Error: " + err.Error())
-					http.Error(w, "Encode Users Error.", http.StatusBadRequest)
+					w.Write(b) //incorrect cookie nonce
+					http.Error(w, "X-WP-Nonce is incorrect or out of date, or Cookie is incorrect or out of date.", http.StatusBadRequest)
 					return
 				}
 				//filter useless info out using struct
@@ -332,6 +338,7 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 				panic(err)
 			}
 			logger.Infof("Status OK")
+			//this Error method sometimes panics with 'http: superfluous response.WriteHeader call from main.wordpress_handle'
 			http.Error(w, orch.URL+": OK", http.StatusOK)
 			return
 		} else {
