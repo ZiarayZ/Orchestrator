@@ -10,7 +10,7 @@ Removed errors sent to client. <br />
 Added authorization token header that is required for every request. <br />
 Also added this authorization token header for between Orchestrator and Wordpress/Regular. <br />
 ## v2.0<br />
-Added check for 'http://', 'https://' and 'www.' within start of the URL and stripped them out. These are added/used within code and unneeded input. <br />
+Added check for 'http://', 'https://' and 'www.' within start of the URL and stripped them out. These are added/used within code and are unneeded input. <br />
 Fixed bugs. <br />
 
 # Regular
