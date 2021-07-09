@@ -24,6 +24,7 @@ Requesting sites has been added now. Only sends a basic check for Status OK. <br
 ## v2.0<br />
 Added logging using mongoDB. <br />
 mongoDB: Will create an entry to the collection for each request with it's URL and status code. <br />
+Added Correlation ID to mongoDB, to keep with how wordpress logging works. <br />
 Changed check from checking for 200 to checking for 200-299. <br />
 Fixed bugs. <br />
 
@@ -39,9 +40,10 @@ Added a basic check which will send a get request and respond with a Status OK o
 ## v2.0<br />
 Added logging using mongoDB. <br />
 mongoDB: Will create an entry to the collection for each check with it's URL and status code. <br />
+Added Correlation ID to mongoDB, to keep track of multiple checks in a single request. <br />
 Changed check from checking for 200 to checking for 200-299. <br />
 Removed basic check, made it do a basic check by default. <br />
-Fixed bugs. <br />
+Fixed bugs, no longer panics and is able to respond when given incorrect nonce and cookie details. <br />
 
 # Instructions
 
