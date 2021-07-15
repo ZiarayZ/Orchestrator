@@ -48,8 +48,9 @@ type PluginStatus struct {
 	Status string
 }
 type UserStatus struct {
-	Name string
-	Link string
+	Name  string
+	Roles string
+	Link  string
 }
 type ConfigStatus struct {
 	Title               string
