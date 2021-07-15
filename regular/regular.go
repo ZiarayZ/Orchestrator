@@ -48,6 +48,18 @@ type MongoStore struct {
 
 var mongoStore = MongoStore{}
 
+func log_update(logVar Log, logID, logURL string, logStatus_code int, logCol *mgo.Collection, logLogger *logrus.Entry) {
+	logVar.Correlation_ID = logID
+	logVar.URL = logURL
+	logVar.Status_code = logStatus_code
+	logVar.Date = time.Now()
+	err := logCol.Insert(logVar)
+	if err != nil {
+		panic(err)
+	}
+	logLogger.Infof("%v", logVar)
+}
+
 func regular_handle(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Orch-Token") == orch_token {
 		if r.Header.Get("Correlation-ID") != "" {
@@ -120,30 +132,16 @@ func regular_handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// handle information and respond
 		resp, err := http.Get("https://" + orch.URL)
 		if resp.StatusCode >= 200 && resp.StatusCode <= 299 {
 			//log it to DB
-			toLog.Correlation_ID = r.Header.Get("Correlation-ID")
-			toLog.URL = orch.URL
-			toLog.Status_code = resp.StatusCode
-			toLog.Date = time.Now()
-			err = col.Insert(toLog)
-			if err != nil {
-				panic(err)
-			}
-			logger.Infof("%v", toLog)
+			log_update(toLog, r.Header.Get("Correlation-ID"), orch.URL, resp.StatusCode, col, logger)
 			http.Error(w, orch.URL+": OK", resp.StatusCode)
 			return
 		} else {
 			//log it to DB
-			toLog.Correlation_ID = r.Header.Get("Correlation-ID")
-			toLog.URL = orch.URL
-			toLog.Status_code = resp.StatusCode
-			toLog.Date = time.Now()
-			if err != nil {
-				panic(err)
-			}
-			logger.Infof("%v", toLog)
+			log_update(toLog, r.Header.Get("Correlation-ID"), orch.URL, resp.StatusCode, col, logger)
 			http.Error(w, "Status Code Not OK", resp.StatusCode)
 			return
 		}
