@@ -44,8 +44,12 @@ type Orchestrator struct {
 
 //structs to store and filter data
 type PluginStatus struct {
-	Name   string
-	Status string
+	Name         string
+	Version      string
+	Status       string
+	Requires_wp  string
+	Requires_php string
+	Plugin_uri   string
 }
 type UserStatus struct {
 	Name  string
