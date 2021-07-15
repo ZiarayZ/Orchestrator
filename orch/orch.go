@@ -92,7 +92,7 @@ func orch_handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		//check and remove "http" or "https" and "www."" from url given
+		//check and remove "http://" or "https://" and "www."" from url given
 		runes := []rune(orch.URL)
 		if string(runes[0:7]) == "http://" {
 			orch.URL = string(runes[7:])

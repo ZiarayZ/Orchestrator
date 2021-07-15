@@ -135,6 +135,15 @@ func regular_handle(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, orch.URL+": OK", resp.StatusCode)
 			return
 		} else {
+			//log it to DB
+			toLog.Correlation_ID = r.Header.Get("Correlation-ID")
+			toLog.URL = orch.URL
+			toLog.Status_code = resp.StatusCode
+			toLog.Date = time.Now()
+			if err != nil {
+				panic(err)
+			}
+			logger.Infof("%v", toLog)
 			http.Error(w, "Status Code Not OK", resp.StatusCode)
 			return
 		}
