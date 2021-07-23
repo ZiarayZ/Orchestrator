@@ -158,157 +158,166 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 		//config = "https://"+orch.URL+"/wp-json/wp/v2/settings"
 		//plugins = "https://"+orch.URL+"/wp-json/wp/v2/plugins"
 		//users = "https://"+orch.URL+"/wp-json/wp/v2/users"
-		toLog.URL = orch.URL
-		toLog.Correlation_ID = r.Header.Get("Correlation-ID")
+		userCheck := false
+		pluginCheck := false
+		configCheck := false
 		for _, v := range orch.Check {
-
-			//plugins check
 			if v == "plugins" {
-				//struct to translate into
-				toPlug := make([]PluginStatus, 0)
-				//generate request
-				req, err := http.NewRequest("GET", "https://"+orch.URL+"/wp-json/wp/v2/plugins", nil)
-				//report error
-				if err != nil {
-					logger.Infof("Request Creation: " + err.Error())
-					http.Error(w, "Request Creation Failed.", http.StatusBadRequest)
-					return
-				}
-				//add headers to request
-				req.Header.Set("X-WP-Nonce", r.Header.Get("X-WP-Nonce"))
-				req.Header.Set("Cookie", r.Header.Get("Cookie"))
-				resp, err := http.DefaultClient.Do(req)
-				//log the result to DB
-				log_update(toLog, r.Header.Get("Correlation-ID"), orch.URL, "plugins", resp.StatusCode, col, logger)
-				//send request and report error
-				if err != nil {
-					logger.Infof("Request Sent: " + err.Error())
-					http.Error(w, "Request Sent Failed.", http.StatusBadRequest)
-					return
-				}
-				defer resp.Body.Close()
-				//get string
-				b, err := io.ReadAll(resp.Body)
-				//report error
-				if err != nil {
-					logger.Infof("Response Received: " + err.Error())
-					http.Error(w, "Response Received Failed.", http.StatusBadRequest)
-					return
-				}
-				//translate into struct and report error
-				//an error will be thrown when the nonce or cookie is out of date or incorrect
-				err = json.Unmarshal(b, &toPlug)
-				if err != nil {
-					logger.Infof("Encode Plugins Error: " + err.Error())
-					w.Write(b) //incorrect cookie nonce
-					http.Error(w, "X-WP-Nonce is incorrect or out of date, or Cookie is incorrect or out of date.", http.StatusBadRequest)
-					return
-				}
-				//filter useless info out using struct
-				filtered, err := json.Marshal(toPlug)
-				//report error
-				if err != nil {
-					logger.Infof("Decode Plugins Error: " + err.Error())
-					http.Error(w, "Decode Plugins Error.", http.StatusBadRequest)
-					return
-				}
-				w.Header().Set("Content-Type", "application/json")
-				//log it and respond
-				w.Write(filtered)
-
-				//config or site settings check
+				pluginCheck = true
 			} else if v == "config" {
-				//generate request
-				req, err := http.NewRequest("GET", "https://"+orch.URL+"/wp-json/wp/v2/settings", nil)
-				//report error
-				if err != nil {
-					logger.Infof("Request Creation: " + err.Error())
-					http.Error(w, "Request Creation Failed.", http.StatusBadRequest)
-					return
-				}
-				//add headers
-				req.Header.Set("X-WP-Nonce", r.Header.Get("X-WP-Nonce"))
-				req.Header.Set("Cookie", r.Header.Get("Cookie"))
-				//send request and report error
-				resp, err := http.DefaultClient.Do(req)
-				//log the result to DB
-				log_update(toLog, r.Header.Get("Correlation-ID"), orch.URL, "config", resp.StatusCode, col, logger)
-				if err != nil {
-					logger.Infof("Request Sent: " + err.Error())
-					http.Error(w, "Request Sent Failed.", http.StatusBadRequest)
-					return
-				}
-				defer resp.Body.Close()
-				//get string
-				b, err := io.ReadAll(resp.Body)
-				//report error
-				if err != nil {
-					logger.Infof("Response Received: " + err.Error())
-					http.Error(w, "Response Received Failed.", http.StatusBadRequest)
-					return
-				}
-				//log it and respond
-				w.Write(b)
-
-				//users check
+				configCheck = true
 			} else if v == "users" {
-				//struct to translate into
-				toPlug := make([]UserStatus, 0)
-				//generate request
-				req, err := http.NewRequest("GET", "https://"+orch.URL+"/wp-json/wp/v2/users", nil)
-				//report error
-				if err != nil {
-					logger.Infof("Request Creation: " + err.Error())
-					http.Error(w, "Request Creation Failed.", http.StatusBadRequest)
-					return
-				}
-				//add headers
-				req.Header.Set("X-WP-Nonce", r.Header.Get("X-WP-Nonce"))
-				req.Header.Set("Cookie", r.Header.Get("Cookie"))
-				resp, err := http.DefaultClient.Do(req)
-				//log the result to DB
-				log_update(toLog, r.Header.Get("Correlation-ID"), orch.URL, "users", resp.StatusCode, col, logger)
-				//send request and report error
-				if err != nil {
-					logger.Infof("Request Sent: " + err.Error())
-					http.Error(w, "Request Sent Failed.", http.StatusBadRequest)
-					return
-				}
-				defer resp.Body.Close()
-				//get string
-				b, err := io.ReadAll(resp.Body)
-				//report error
-				if err != nil {
-					logger.Infof("Response Received: " + err.Error())
-					http.Error(w, "Response Received Failed.", http.StatusBadRequest)
-					return
-				}
-				//translate into struct and report error
-				//an error will be thrown when the nonce or cookie is out of date or incorrect
-				err = json.Unmarshal(b, &toPlug)
-				if err != nil {
-					logger.Infof("Encode Users Error: " + err.Error())
-					w.Write(b) //incorrect cookie nonce
-					http.Error(w, "X-WP-Nonce is incorrect or out of date, or Cookie is incorrect or out of date.", http.StatusBadRequest)
-					return
-				}
-				//filter useless info out using struct
-				filtered, err := json.Marshal(toPlug)
-				//report error
-				if err != nil {
-					logger.Infof("Decode Users Error: " + err.Error())
-					http.Error(w, "Decode Users Error.", http.StatusBadRequest)
-					return
-				}
-				w.Header().Set("Content-Type", "application/json")
-				//log it and respond
-				w.Write(filtered)
-
-				//invalid check
+				userCheck = true
 			} else {
+				//invalid check
 				logger.Infof("Incorrect Check: \"" + v + "\"")
 				fmt.Fprintf(w, "Incorrect Check: \""+v+"\"")
 			}
+		}
+
+		//plugins check
+		if pluginCheck {
+			//struct to translate into
+			toPlug := make([]PluginStatus, 0)
+			//generate request
+			req, err := http.NewRequest("GET", "https://"+orch.URL+"/wp-json/wp/v2/plugins", nil)
+			//report error
+			if err != nil {
+				logger.Infof("Request Creation: " + err.Error())
+				http.Error(w, "Request Creation Failed.", http.StatusBadRequest)
+				return
+			}
+			//add headers to request
+			req.Header.Set("X-WP-Nonce", r.Header.Get("X-WP-Nonce"))
+			req.Header.Set("Cookie", r.Header.Get("Cookie"))
+			resp, err := http.DefaultClient.Do(req)
+			//log the result to DB
+			log_update(toLog, r.Header.Get("Correlation-ID"), orch.URL, "plugins", resp.StatusCode, col, logger)
+			//send request and report error
+			if err != nil {
+				logger.Infof("Request Sent: " + err.Error())
+				http.Error(w, "Request Sent Failed.", http.StatusBadRequest)
+				return
+			}
+			defer resp.Body.Close()
+			//get string
+			b, err := io.ReadAll(resp.Body)
+			//report error
+			if err != nil {
+				logger.Infof("Response Received: " + err.Error())
+				http.Error(w, "Response Received Failed.", http.StatusBadRequest)
+				return
+			}
+			//translate into struct and report error
+			//an error will be thrown when the nonce or cookie is out of date or incorrect
+			err = json.Unmarshal(b, &toPlug)
+			if err != nil {
+				logger.Infof("Encode Plugins Error: " + err.Error())
+				w.Write(b) //incorrect cookie nonce
+				http.Error(w, "X-WP-Nonce is incorrect or out of date, or Cookie is incorrect or out of date.", http.StatusBadRequest)
+				return
+			}
+			//filter useless info out using struct
+			filtered, err := json.Marshal(toPlug)
+			//report error
+			if err != nil {
+				logger.Infof("Decode Plugins Error: " + err.Error())
+				http.Error(w, "Decode Plugins Error.", http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			//log it and respond
+			w.Write(filtered)
+		}
+
+		//config or site settings check
+		if configCheck {
+			//generate request
+			req, err := http.NewRequest("GET", "https://"+orch.URL+"/wp-json/wp/v2/settings", nil)
+			//report error
+			if err != nil {
+				logger.Infof("Request Creation: " + err.Error())
+				http.Error(w, "Request Creation Failed.", http.StatusBadRequest)
+				return
+			}
+			//add headers
+			req.Header.Set("X-WP-Nonce", r.Header.Get("X-WP-Nonce"))
+			req.Header.Set("Cookie", r.Header.Get("Cookie"))
+			//send request and report error
+			resp, err := http.DefaultClient.Do(req)
+			//log the result to DB
+			log_update(toLog, r.Header.Get("Correlation-ID"), orch.URL, "config", resp.StatusCode, col, logger)
+			if err != nil {
+				logger.Infof("Request Sent: " + err.Error())
+				http.Error(w, "Request Sent Failed.", http.StatusBadRequest)
+				return
+			}
+			defer resp.Body.Close()
+			//get string
+			b, err := io.ReadAll(resp.Body)
+			//report error
+			if err != nil {
+				logger.Infof("Response Received: " + err.Error())
+				http.Error(w, "Response Received Failed.", http.StatusBadRequest)
+				return
+			}
+			//log it and respond
+			w.Write(b)
+		}
+
+		//users check
+		if userCheck {
+			//struct to translate into
+			toPlug := make([]UserStatus, 0)
+			//generate request
+			req, err := http.NewRequest("GET", "https://"+orch.URL+"/wp-json/wp/v2/users", nil)
+			//report error
+			if err != nil {
+				logger.Infof("Request Creation: " + err.Error())
+				http.Error(w, "Request Creation Failed.", http.StatusBadRequest)
+				return
+			}
+			//add headers
+			req.Header.Set("X-WP-Nonce", r.Header.Get("X-WP-Nonce"))
+			req.Header.Set("Cookie", r.Header.Get("Cookie"))
+			resp, err := http.DefaultClient.Do(req)
+			//log the result to DB
+			log_update(toLog, r.Header.Get("Correlation-ID"), orch.URL, "users", resp.StatusCode, col, logger)
+			//send request and report error
+			if err != nil {
+				logger.Infof("Request Sent: " + err.Error())
+				http.Error(w, "Request Sent Failed.", http.StatusBadRequest)
+				return
+			}
+			defer resp.Body.Close()
+			//get string
+			b, err := io.ReadAll(resp.Body)
+			//report error
+			if err != nil {
+				logger.Infof("Response Received: " + err.Error())
+				http.Error(w, "Response Received Failed.", http.StatusBadRequest)
+				return
+			}
+			//translate into struct and report error
+			//an error will be thrown when the nonce or cookie is out of date or incorrect
+			err = json.Unmarshal(b, &toPlug)
+			if err != nil {
+				logger.Infof("Encode Users Error: " + err.Error())
+				w.Write(b) //incorrect cookie nonce
+				http.Error(w, "X-WP-Nonce is incorrect or out of date, or Cookie is incorrect or out of date.", http.StatusBadRequest)
+				return
+			}
+			//filter useless info out using struct
+			filtered, err := json.Marshal(toPlug)
+			//report error
+			if err != nil {
+				logger.Infof("Decode Users Error: " + err.Error())
+				http.Error(w, "Decode Users Error.", http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			//log it and respond
+			w.Write(filtered)
 		}
 
 		//basic check
