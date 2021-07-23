@@ -1,6 +1,7 @@
 # Possible Improvements or Changes
 ## Complex Changes: <br />
 - [ ] Cache API results for a certain period of time in Orchestrator, reduces cost of sending and receiving API requests.
+- [ ] Improvement on Caching, make sure credentials are valid first.
 ## Simple Improvements: <br />
 - [x] Add user roles to 'users' output (i.e. "Administrator").
 - [x] Add information for 'plugins' output, mainly the version and requirements.
