@@ -69,6 +69,19 @@ type MongoStore struct {
 
 var mongoStore = MongoStore{}
 
+func log_update(logVar Log, logID, logURL string, logCheck string, logStatus_code int, logCol *mgo.Collection, logLogger *logrus.Entry) {
+	logVar.Correlation_ID = logID
+	logVar.URL = logURL
+	logVar.Check = logCheck
+	logVar.Status_code = logStatus_code
+	logVar.Date = time.Now()
+	err := logCol.Insert(logVar)
+	if err != nil {
+		panic(err)
+	}
+	logLogger.Infof("%v", logVar)
+}
+
 func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Orch-Token") == orch_token {
 		if r.Header.Get("Correlation-ID") != "" {
@@ -166,15 +179,7 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 				req.Header.Set("Cookie", r.Header.Get("Cookie"))
 				resp, err := http.DefaultClient.Do(req)
 				//log the result to DB
-				toLog.Status_code = resp.StatusCode
-				toLog.Check = "plugins"
-				toLog.Date = time.Now()
-				newErr := col.Insert(toLog)
-				if newErr != nil {
-					logger.Infof("Logging Failed: " + newErr.Error())
-					http.Error(w, "Logging Failed.", http.StatusBadRequest)
-					return
-				}
+				log_update(toLog, r.Header.Get("Correlation-ID"), orch.URL, "plugins", resp.StatusCode, col, logger)
 				//send request and report error
 				if err != nil {
 					logger.Infof("Request Sent: " + err.Error())
@@ -227,15 +232,7 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 				//send request and report error
 				resp, err := http.DefaultClient.Do(req)
 				//log the result to DB
-				toLog.Status_code = resp.StatusCode
-				toLog.Check = "config"
-				toLog.Date = time.Now()
-				newErr := col.Insert(toLog)
-				if newErr != nil {
-					logger.Infof("Logging Failed: " + newErr.Error())
-					http.Error(w, "Logging Failed.", http.StatusBadRequest)
-					return
-				}
+				log_update(toLog, r.Header.Get("Correlation-ID"), orch.URL, "config", resp.StatusCode, col, logger)
 				if err != nil {
 					logger.Infof("Request Sent: " + err.Error())
 					http.Error(w, "Request Sent Failed.", http.StatusBadRequest)
@@ -270,15 +267,7 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 				req.Header.Set("Cookie", r.Header.Get("Cookie"))
 				resp, err := http.DefaultClient.Do(req)
 				//log the result to DB
-				toLog.Status_code = resp.StatusCode
-				toLog.Check = "users"
-				toLog.Date = time.Now()
-				newErr := col.Insert(toLog)
-				if newErr != nil {
-					logger.Infof("Logging Failed: " + newErr.Error())
-					http.Error(w, "Logging Failed.", http.StatusBadRequest)
-					return
-				}
+				log_update(toLog, r.Header.Get("Correlation-ID"), orch.URL, "users", resp.StatusCode, col, logger)
 				//send request and report error
 				if err != nil {
 					logger.Infof("Request Sent: " + err.Error())
@@ -325,15 +314,7 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 		//basic check
 		resp, err := http.Get("https://" + orch.URL)
 		//log the result to DB
-		toLog.Status_code = resp.StatusCode
-		toLog.Check = "basic"
-		toLog.Date = time.Now()
-		newErr := col.Insert(toLog)
-		if newErr != nil {
-			logger.Infof("Logging Failed: " + newErr.Error())
-			http.Error(w, "Logging Failed.", http.StatusBadRequest)
-			return
-		}
+		log_update(toLog, r.Header.Get("Correlation-ID"), orch.URL, "basic", resp.StatusCode, col, logger)
 		if err != nil {
 			logger.Infof("Basic Request Error: " + err.Error())
 			http.Error(w, "Basic Request Error.", http.StatusBadRequest)
