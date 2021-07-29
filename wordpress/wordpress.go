@@ -184,6 +184,7 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 			//report error
 			if err != nil {
 				logger.Infof("Request Creation: " + err.Error())
+				log_update(toLog, r.Header.Get("Correlation-ID"), orch.URL, "plugins", 400, col, logger)
 				http.Error(w, "Request Creation Failed.", http.StatusBadRequest)
 				return
 			}
@@ -237,6 +238,7 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 			//report error
 			if err != nil {
 				logger.Infof("Request Creation: " + err.Error())
+				log_update(toLog, r.Header.Get("Correlation-ID"), orch.URL, "config", 400, col, logger)
 				http.Error(w, "Request Creation Failed.", http.StatusBadRequest)
 				return
 			}
@@ -274,6 +276,7 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 			//report error
 			if err != nil {
 				logger.Infof("Request Creation: " + err.Error())
+				log_update(toLog, r.Header.Get("Correlation-ID"), orch.URL, "users", 400, col, logger)
 				http.Error(w, "Request Creation Failed.", http.StatusBadRequest)
 				return
 			}
