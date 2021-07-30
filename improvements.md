@@ -10,3 +10,4 @@
 - [x] Since regular checks log the same way, simplified by creating a logging function for it.
 - [x] Prepare wordpress script for future checks, and for added details to checks.
 - [x] Make sure to foolproof wordpress checks and it's logging.
+- [x] Make all string checking more foolproof.
