@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
@@ -27,6 +28,14 @@ type Orchestrator struct {
 	URL      string
 	Platform string
 	Check    []string
+}
+
+//Wordpress cache to hold information for an hour?
+type WPCache struct {
+	Nonce   string //credentials to access this cache
+	Users   []byte
+	Plugins []byte
+	Config  []byte
 }
 
 func orch_handle(w http.ResponseWriter, r *http.Request) {
@@ -108,6 +117,16 @@ func orch_handle(w http.ResponseWriter, r *http.Request) {
 		//log the information sent
 		logger.Infof("%v", orch)
 
+		//trim whitespace and any non-alphabetic character from it
+		//since none of our checks use anything but alphabetic characters, this helps with typos involving other characters
+		orch.Platform = strings.TrimSpace(orch.Platform)
+		reg, err := regexp.Compile("[^a-zA-Z]+")
+		if err != nil {
+			http.Error(w, "Server Error!", http.StatusBadRequest)
+			log.Fatal(err)
+			return
+		}
+		orch.Platform = reg.ReplaceAllString(orch.Platform, "")
 		//make request to wordpress/regular component
 		if orch.Platform == "wordpress" || orch.Platform == "regular" {
 			newBody, err := json.Marshal(orch)

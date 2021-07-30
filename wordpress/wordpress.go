@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -160,13 +161,32 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 		//users = "https://"+orch.URL+"/wp-json/wp/v2/users"
 		userCheck := false
 		pluginCheck := false
+		updatePluginCheck := false
 		configCheck := false
 		for _, v := range orch.Check {
-			if v == "plugins" {
+			//trim whitespace and any non-alphabetic character from it
+			//since none of our checks use anything but alphabetic characters, this helps with typos involving other characters
+			v = strings.TrimSpace(v)
+			reg, err := regexp.Compile("[^a-zA-Z]+")
+			if err != nil {
+				http.Error(w, "Server Error!", http.StatusBadRequest)
+				log.Fatal(err)
+				return
+			}
+			v = reg.ReplaceAllString(v, "")
+			//check and remove "s" from the end of each check
+			runes := []rune(v)
+			if string(runes[len(runes)-1]) == "s" {
+				v = string(runes[:len(runes)-1])
+			}
+			if strings.ToLower(v) == "plugin" {
 				pluginCheck = true
-			} else if v == "config" {
+			} else if strings.ToLower(v) == "updateplugin" {
+				pluginCheck = true
+				updatePluginCheck = true
+			} else if strings.ToLower(v) == "config" {
 				configCheck = true
-			} else if v == "users" {
+			} else if strings.ToLower(v) == "user" {
 				userCheck = true
 			} else {
 				//invalid check
@@ -208,6 +228,9 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 				logger.Infof("Response Received: " + err.Error())
 				http.Error(w, "Response Received Failed.", http.StatusBadRequest)
 				return
+			}
+			if updatePluginCheck {
+				//add code for checking versions
 			}
 			//translate into struct and report error
 			//an error will be thrown when the nonce or cookie is out of date or incorrect
