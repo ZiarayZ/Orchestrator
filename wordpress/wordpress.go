@@ -418,7 +418,7 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 			}
 			logger.Infof("Status OK")
 			//this Error method sometimes panics with 'http: superfluous response.WriteHeader call from main.wordpress_handle'
-			http.Error(w, orch.URL+": OK", http.StatusOK)
+			w.WriteHeader(200)
 			return
 		} else {
 			http.Error(w, "Status Code Not OK", resp.StatusCode)
