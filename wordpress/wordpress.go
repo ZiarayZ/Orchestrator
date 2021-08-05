@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"regexp"
@@ -45,6 +46,7 @@ type Orchestrator struct {
 
 //structs to store and filter data
 type PluginStatus struct {
+	Plugin       string
 	Name         string
 	Version      string
 	Status       string
@@ -62,6 +64,17 @@ type ConfigStatus struct {
 	URL                 string
 	Email               string
 	Default_ping_status string
+}
+
+//new struct for sending, edits version, for two different types
+type PluginSent struct {
+	Name            string
+	Version_current string
+	Version_latest  string
+	Status          string
+	Requires_wp     string
+	Requires_php    string
+	Plugin_uri      string
 }
 
 type MongoStore struct {
@@ -161,7 +174,6 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 		//users = "https://"+orch.URL+"/wp-json/wp/v2/users"
 		userCheck := false
 		pluginCheck := false
-		updatePluginCheck := false
 		configCheck := false
 		for _, v := range orch.Check {
 			//trim whitespace and any non-alphabetic character from it
@@ -181,9 +193,6 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 			}
 			if strings.ToLower(v) == "plugin" {
 				pluginCheck = true
-			} else if strings.ToLower(v) == "updateplugin" {
-				pluginCheck = true
-				updatePluginCheck = true
 			} else if strings.ToLower(v) == "config" {
 				configCheck = true
 			} else if strings.ToLower(v) == "user" {
@@ -226,12 +235,10 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 			//report error
 			if err != nil {
 				logger.Infof("Response Received: " + err.Error())
-				http.Error(w, "Response Received Failed.", http.StatusBadRequest)
+				http.Error(w, "Failed to fetch current version.", http.StatusBadRequest)
 				return
 			}
-			if updatePluginCheck {
-				//add code for checking versions
-			}
+
 			//translate into struct and report error
 			//an error will be thrown when the nonce or cookie is out of date or incorrect
 			err = json.Unmarshal(b, &toPlug)
@@ -241,8 +248,59 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "X-WP-Nonce is incorrect or out of date, or Cookie is incorrect or out of date.", http.StatusBadRequest)
 				return
 			}
+
+			//add code for checking versions, edit each toPlug and change version from string to boolean
+			newPlug := make([]PluginSent, 0)
+			for _, vPlug := range toPlug {
+				latVersion := "N/A"
+				split := strings.Split(vPlug.Plugin, "/")
+				newResp, err := http.Get("https://api.wordpress.org/plugins/info/1.0/" + split[0])
+				if err != nil {
+					logger.Infof("New Response Received: " + err.Error())
+					http.Error(w, "Failed to fetch latest version.", http.StatusBadRequest)
+					return
+				}
+				defer newResp.Body.Close()
+				responseData, err := ioutil.ReadAll(newResp.Body)
+				if err != nil {
+					http.Error(w, "Failed to fetch latest version.", http.StatusBadRequest)
+					log.Fatal(err)
+					return
+				}
+				stringData := []rune(string(responseData))
+				if string(stringData[15]) == "2" && string(stringData[16]) == "5" {
+					reg, err := regexp.Compile(";s:5:")
+					if err != nil {
+						http.Error(w, "Server Error!", http.StatusBadRequest)
+						log.Fatal(err)
+						return
+					}
+					location := reg.FindStringIndex(string(stringData))
+					if location != nil {
+						countChars := 0
+						for _, vChar := range stringData[location[0]+6:] {
+							if string(vChar) != "\"" {
+								countChars++
+							} else {
+								break
+							}
+						}
+						latVersion = string(stringData[location[0]+6 : location[0]+6+countChars])
+					}
+				}
+				newPlug = append(newPlug, PluginSent{
+					Name:            vPlug.Name,
+					Version_current: vPlug.Version,
+					Version_latest:  latVersion,
+					Status:          vPlug.Status,
+					Requires_wp:     vPlug.Requires_wp,
+					Requires_php:    vPlug.Requires_php,
+					Plugin_uri:      vPlug.Plugin_uri,
+				})
+			}
+
 			//filter useless info out using struct
-			filtered, err := json.Marshal(toPlug)
+			filtered, err := json.Marshal(newPlug)
 			//report error
 			if err != nil {
 				logger.Infof("Decode Plugins Error: " + err.Error())
