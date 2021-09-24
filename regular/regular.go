@@ -96,7 +96,7 @@ func regular_handle(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, msg, http.StatusBadRequest)
 			// Catch these errors when Decode returns an unexpected EOF
 			case errors.Is(err, io.ErrUnexpectedEOF):
-				msg := fmt.Sprintf("Request body contains badly-formed JSON")
+				msg := "Request body contains badly-formed JSON"
 				http.Error(w, msg, http.StatusBadRequest)
 			// Catch any type errors
 			case errors.As(err, &unmarshalTypeError):
@@ -134,7 +134,11 @@ func regular_handle(w http.ResponseWriter, r *http.Request) {
 
 		// handle information and respond
 		resp, err := http.Get("https://" + orch.URL)
-		if resp.StatusCode >= 200 && resp.StatusCode <= 299 {
+		if err != nil {
+			log.Fatal(err)
+			http.Error(w, "Failed to receive request's response.", http.StatusBadRequest)
+			return
+		} else if resp.StatusCode >= 200 && resp.StatusCode <= 299 {
 			//log it to DB
 			log_update(toLog, r.Header.Get("Correlation-ID"), orch.URL, resp.StatusCode, col, logger)
 			http.Error(w, orch.URL+": OK", resp.StatusCode)

@@ -11,9 +11,11 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	"github.com/patrickmn/go-cache"
 	"github.com/sirupsen/logrus"
 )
 
@@ -30,13 +32,24 @@ type Orchestrator struct {
 	Check    []string
 }
 
-//Wordpress cache to hold information for an hour?
-type WPCache struct {
-	Nonce   string //credentials to access this cache
-	Users   []byte
-	Plugins []byte
-	Config  []byte
+func stripCheck(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	vReg, err := regexp.Compile("[^a-zA-Z]+")
+	if err != nil {
+		return value, err
+	}
+	value = vReg.ReplaceAllString(value, "")
+	//check and remove "s" from the end of each check
+	runeCheck := []rune(value)
+	if string(runeCheck[len(runeCheck)-1]) == "s" {
+		value = string(runeCheck[:len(runeCheck)-1])
+	}
+	return value, nil
 }
+
+//define cache as global
+var wpCache *cache.Cache //stores "X-WP-Nonce:type": "result"
+//var bc *cache.Cache      //stores www."siteaddress".com: "result"
 
 func orch_handle(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Orch-Token") == password {
@@ -64,7 +77,7 @@ func orch_handle(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, msg, http.StatusBadRequest)
 			// Catch these errors when Decode returns an unexpected EOF
 			case errors.Is(err, io.ErrUnexpectedEOF):
-				msg := fmt.Sprintf("Request body contains badly-formed JSON")
+				msg := "Request body contains badly-formed JSON"
 				http.Error(w, msg, http.StatusBadRequest)
 			// Catch any type errors
 			case errors.As(err, &unmarshalTypeError):
@@ -126,26 +139,64 @@ func orch_handle(w http.ResponseWriter, r *http.Request) {
 			log.Fatal(err)
 			return
 		}
-		orch.Platform = reg.ReplaceAllString(orch.Platform, "")
+		orch.Platform = strings.ToLower(reg.ReplaceAllString(orch.Platform, ""))
+		platRunes := []rune(orch.Platform)
+		if orch.Platform != "wordpress" && string(platRunes[len(platRunes)-1]) == "s" {
+			orch.Platform = string(platRunes[:len(platRunes)-1])
+		}
+		//use regexp to be more efficient and foolproof
+		if orch.Platform == "basic" || orch.Platform == "reg" {
+			orch.Platform = "regular"
+		}
+		if orch.Platform == "wp" {
+			orch.Platform = "wordpress"
+		}
+
+		//edit ports
+		newPort := "4000" //automatically set to a regular check
+		if orch.Platform == "wordpress" {
+			newPort = wordpressPort
+		} else {
+			logger.Infof("Requested Site Type Error: " + orch.Platform)
+			http.Error(w, "Requested Site Type Error: "+orch.Platform, http.StatusBadRequest)
+			return
+		}
+
 		//make request to wordpress/regular component
 		if orch.Platform == "wordpress" || orch.Platform == "regular" {
+			nonceHeader := r.Header.Get("X-WP-Nonce")
+			var cacheResult []byte
+			var toDelete []int
+			for iCheck, vCheck := range orch.Check {
+				vCheck, err = stripCheck(vCheck)
+				if err != nil {
+					http.Error(w, "Server Error!", http.StatusBadRequest)
+					log.Fatal(err)
+				}
+				if vCheck == "setting" {
+					vCheck = "config"
+				}
+				cacheData, found := wpCache.Get(nonceHeader + ":" + vCheck)
+				if found {
+					//deal with cacheData
+					toDelete = append(toDelete, iCheck)
+					cacheResult = append(cacheResult, cacheData.([]byte)...)
+				}
+			}
+			for item := len(toDelete) - 1; item >= 0; item-- {
+				orch.Check = append(orch.Check[:toDelete[item]], orch.Check[toDelete[item]+1:]...)
+			}
+			if len(orch.Check) == 0 {
+				orch.Platform = "regular"
+				newPort = regularPort
+			}
+
+			//check nonce with cache before executing these
 			newBody, err := json.Marshal(orch)
 			//return/log error
 			if err != nil {
 				logger.Infof("Encode JSON: " + err.Error())
 				http.Error(w, "Encode JSOn Failed.", http.StatusBadRequest)
-				return
-			}
-			newPort := regularPort
-			//edit ports
-			if orch.Platform == "wordpress" {
-				newPort = "4001"
-			} else if orch.Platform == "regular" {
-				newPort = "4002"
-				//return/log error
-			} else {
-				logger.Infof("Requested Site Type Error: " + orch.Platform)
-				http.Error(w, "Requested Site Type Error: "+orch.Platform, http.StatusBadRequest)
 				return
 			}
 			req, err := http.NewRequest("POST", "http://localhost:"+newPort+"/"+orch.Platform, bytes.NewBuffer(newBody))
@@ -166,7 +217,7 @@ func orch_handle(w http.ResponseWriter, r *http.Request) {
 			req.Header.Set("Orch-Token", insidePassword)
 			//relay auth token if it's for wordpress
 			if orch.Platform == "wordpress" {
-				req.Header.Set("X-WP-Nonce", r.Header.Get("X-WP-Nonce"))
+				req.Header.Set("X-WP-Nonce", nonceHeader)
 				req.Header.Set("Cookie", r.Header.Get("Cookie"))
 			}
 			//send request and receive response
@@ -188,7 +239,66 @@ func orch_handle(w http.ResponseWriter, r *http.Request) {
 			}
 			//return string, either ok or error
 			logger.Infof("Status OK")
-			fmt.Fprintf(w, string(b))
+
+			//caching attempt, use a splice of cache objects? link to their Nonce?
+			//check cache before attempting this chunk
+			userCheck := false
+			pluginCheck := false
+			configCheck := false
+			for _, v := range orch.Check {
+				//trim whitespace and any non-alphabetic character from it
+				//since none of our checks use anything but alphabetic characters, this helps with typos involving other characters
+				v, err = stripCheck(v)
+				if err != nil {
+					http.Error(w, "Server Error!", http.StatusBadRequest)
+					log.Fatal(err)
+				}
+				if strings.ToLower(v) == "plugin" {
+					pluginCheck = true
+				} else if strings.ToLower(v) == "config" || strings.ToLower(v) == "setting" {
+					configCheck = true
+				} else if strings.ToLower(v) == "user" {
+					userCheck = true
+				} else {
+					//invalid check
+					logger.Infof("Incorrect Check: \"" + v + "\"")
+					fmt.Fprintf(w, "Incorrect Check: \""+v+"\"")
+				}
+			}
+			strip, err := regexp.Compile(`\[(.*?)\]`)
+			if err != nil {
+				http.Error(w, "Server Error!", http.StatusBadRequest)
+				log.Fatal(err)
+			}
+			bytes := strip.FindAll(b, -1)
+			locIndex := 0
+			//now read through "b" and split it into 3 chunks
+			if pluginCheck {
+				err := wpCache.Add(nonceHeader+":plugin", bytes[locIndex], cache.DefaultExpiration)
+				if err != nil {
+					log.Fatal(err)
+				}
+				logger.Infof("Cached plugins.")
+				locIndex++
+			}
+			if configCheck {
+				err := wpCache.Add(nonceHeader+":config", strip.ReplaceAll(b, []byte("")), cache.DefaultExpiration)
+				if err != nil {
+					log.Fatal(err)
+				}
+				logger.Infof("Cached config.")
+			}
+			if userCheck {
+				err := wpCache.Add(nonceHeader+":user", bytes[locIndex], cache.DefaultExpiration)
+				if err != nil {
+					log.Fatal(err)
+				}
+				logger.Infof("Cached users.")
+			}
+
+			//add cacheResult in this response
+			b = append(cacheResult, b...)
+			w.Write(b)
 			//return/log error
 		} else {
 			logger.Infof("Incorrect Platform.")
@@ -221,6 +331,10 @@ func main() {
 	r := mux.NewRouter()
 	r.Use(CorrelationGeneration)
 	r.HandleFunc("/orch", orch_handle)
+
+	//create cache
+	wpCache = cache.New(5*time.Minute, 10*time.Minute)
+	//5 minutes is the default expiration time, cleanup cache of expired data every 10 minutes
 
 	//define ports, change at will
 	port := "4000"

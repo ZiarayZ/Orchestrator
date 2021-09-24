@@ -55,15 +55,26 @@ type PluginStatus struct {
 	Plugin_uri   string
 }
 type UserStatus struct {
-	Name  string
-	Roles string
-	Link  string
+	Slug string
+	Name string
+	Link string
 }
 type ConfigStatus struct {
-	Title               string
-	URL                 string
-	Email               string
-	Default_ping_status string
+	Title                  string
+	Description            string
+	URL                    string
+	Email                  string
+	Timezone               string
+	Date_format            string
+	Time_format            string
+	Start_of_week          int
+	Language               string
+	Use_smilies            bool
+	Default_category       int
+	Default_post_format    string
+	Posts_per_page         int
+	Default_ping_status    string
+	Default_comment_status string
 }
 
 //new struct for sending, edits version, for two different types
@@ -130,7 +141,7 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, msg, http.StatusBadRequest)
 			// Catch these errors when Decode returns an unexpected EOF
 			case errors.Is(err, io.ErrUnexpectedEOF):
-				msg := fmt.Sprintf("Request body contains badly-formed JSON")
+				msg := "Request body contains badly-formed JSON"
 				http.Error(w, msg, http.StatusBadRequest)
 			// Catch any type errors
 			case errors.As(err, &unmarshalTypeError):
@@ -193,7 +204,7 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 			}
 			if strings.ToLower(v) == "plugin" {
 				pluginCheck = true
-			} else if strings.ToLower(v) == "config" {
+			} else if strings.ToLower(v) == "config" || strings.ToLower(v) == "setting" {
 				configCheck = true
 			} else if strings.ToLower(v) == "user" {
 				userCheck = true
@@ -243,8 +254,9 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 			//an error will be thrown when the nonce or cookie is out of date or incorrect
 			err = json.Unmarshal(b, &toPlug)
 			if err != nil {
+				userCheck = false
+				configCheck = false
 				logger.Infof("Encode Plugins Error: " + err.Error())
-				w.Write(b) //incorrect cookie nonce
 				http.Error(w, "X-WP-Nonce is incorrect or out of date, or Cookie is incorrect or out of date.", http.StatusBadRequest)
 				return
 			}
@@ -314,6 +326,8 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 
 		//config or site settings check
 		if configCheck {
+			//struct to translate into
+			var toConf ConfigStatus
 			//generate request
 			req, err := http.NewRequest("GET", "https://"+orch.URL+"/wp-json/wp/v2/settings", nil)
 			//report error
@@ -344,14 +358,31 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "Response Received Failed.", http.StatusBadRequest)
 				return
 			}
+			err = json.Unmarshal(b, &toConf)
+			if err != nil {
+				userCheck = false
+				logger.Infof("Encode Config Error: " + err.Error())
+				w.Write(b) //incorrect cookie nonce
+				http.Error(w, "X-WP-Nonce is incorrect or out of date, or Cookie is incorrect or out of date.", http.StatusBadRequest)
+				return
+			}
+			//filter useless info out using struct and check for valid response
+			filtered, err := json.Marshal(toConf)
+			//report error
+			if err != nil {
+				logger.Infof("Decode Plugins Error: " + err.Error())
+				http.Error(w, "Decode Plugins Error.", http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
 			//log it and respond
-			w.Write(b)
+			w.Write(filtered)
 		}
 
 		//users check
 		if userCheck {
 			//struct to translate into
-			toPlug := make([]UserStatus, 0)
+			toUse := make([]UserStatus, 0)
 			//generate request
 			req, err := http.NewRequest("GET", "https://"+orch.URL+"/wp-json/wp/v2/users", nil)
 			//report error
@@ -384,7 +415,7 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 			}
 			//translate into struct and report error
 			//an error will be thrown when the nonce or cookie is out of date or incorrect
-			err = json.Unmarshal(b, &toPlug)
+			err = json.Unmarshal(b, &toUse)
 			if err != nil {
 				logger.Infof("Encode Users Error: " + err.Error())
 				w.Write(b) //incorrect cookie nonce
@@ -392,7 +423,7 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			//filter useless info out using struct
-			filtered, err := json.Marshal(toPlug)
+			filtered, err := json.Marshal(toUse)
 			//report error
 			if err != nil {
 				logger.Infof("Decode Users Error: " + err.Error())
@@ -418,6 +449,7 @@ func wordpress_handle(w http.ResponseWriter, r *http.Request) {
 			}
 			logger.Infof("Status OK")
 			//this Error method sometimes panics with 'http: superfluous response.WriteHeader call from main.wordpress_handle'
+			//might be unnecessary stuff
 			w.WriteHeader(200)
 			return
 		} else {
